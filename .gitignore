@@ -1,0 +1,10 @@
+# ignore:
+/PCB/*
+# except:
+!/PCB/Gerber
+!*.step
+!*.PcbDoc
+!*.PDF
+!*.PrjPcb
+!*.SchDoc
+
