@@ -25,7 +25,8 @@
  * GLOBAL VARIABLES
  */
 
-uint32 cumuWheelRevolutions=0;
+uint32 cumuWheelRevolutions = 0;
+uint16 crankLength = 0;
 
 // CP service
 CONST uint8 cyclingPowerServUUID[ATT_BT_UUID_SIZE] =
@@ -68,11 +69,9 @@ CONST uint8 cyclingPowerVectorUUID[ATT_BT_UUID_SIZE] =
 /*********************************************************************
  * LOCAL VARIABLES
  */
-
-// Preset cumulative value 
+ 
 static cyclingPowerServiceCB_t cyclingPowerServiceCB = NULL; 
 
-static uint8 supportedSensors = 0; 
 static bool scOpInProgress = FALSE; // Control point busy flag
 
 // Variables used in CP command processing
@@ -80,6 +79,7 @@ static uint16 connectionHandle;
 static attHandleValueInd_t cpsCmdInd;
 
 // Available sensor locations
+static uint8 supportedSensors = 0; 
 static uint8 supportedSensorLocations[CP_MAX_SENSOR_LOCS];
 
 
@@ -94,21 +94,23 @@ uint8 cyclingPowerService_TaskID = 0;
 static CONST gattAttrType_t cyclingPowerService = { ATT_BT_UUID_SIZE, cyclingPowerServUUID };
 
 // TODO: check types of variables e.g. uint8...
+
 // CP feature Characteristic
 static uint8 cyclingPowerFeatureProps = GATT_PROP_READ;
-//static uint32 cyclingPowerFeatures = CP_NO_SUPPORT;
-static uint32 cyclingPowerFeatures = 0;
+static uint32 cyclingPowerFeatures = CP_NO_SUPPORT;
 static uint8 cyclingPowerFeatureUserDesc[]="CPS feature support\0";
 
 // CP measurement Characteristic
 static uint8 cyclingPowerMeasProps = GATT_PROP_NOTIFY;
 static uint8 cyclingPowerMeas = 0;
+// TODO: check that cyclingPowerMeas may be struct, see spec
 static gattCharCfg_t *cyclingPowerMeasClientCharCfg;
 static uint8 cyclingPowerMeasUserDesc[]="CPS measurement variable\0";
 
 // Sensor location characteristic
 static uint8 cyclingPowerSensLocProps = GATT_PROP_READ;
 static uint8 cyclingPowerSensLoc = CP_SENSOR_LOC_LEFT_CRANK;
+// TODO: add capability to restore this^ value from flash
 static uint8 cyclingPowerSensLocUserDesc[]="CPS sensor location\0";
 
 // CP control point characteristic
@@ -130,9 +132,12 @@ static uint8 cyclingPowerVectorUserDesc[]="CPS vector variable\0";
  */
 
 //Еable layout, it is important that the elements correspond to the indexes:
-#define CP_MEAS_VALUE_POS                    5
+#define CP_MEAS_VALUE_POS                     5
+#define CP_MEAS_CFG_POS                       6
+#define CP_COMMAND_CFG_POS                    13
 #ifdef INCLUDE_CP_VECTOR
-#define CP_VECTOR_VALUE_POS                  16
+#define CP_VECTOR_VALUE_POS                   16
+#define CP_VECTOR_CFG_POS                     17
 #endif /* INCLUDE_CP_VECTOR */
 
 static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables e.g. uint8...
@@ -142,7 +147,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
     { ATT_BT_UUID_SIZE, primaryServiceUUID }, /* type */
     GATT_PERMIT_READ,                         /* permissions */
     0,                                        /* handle */
-    (uint8 *) &cyclingPowerService            /* pValue */
+/*0*/ (uint8 *) &cyclingPowerService            /* pValue */
   },
 
     // CP feature declaration
@@ -150,7 +155,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ,
       0,
-      &cyclingPowerFeatureProps
+/*1*/ &cyclingPowerFeatureProps
     },
 
       // feature Value
@@ -158,7 +163,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, cyclingPowerFeatureUUID },
         GATT_PERMIT_READ,
         0,
-        (uint8 *) &cyclingPowerFeatures
+/*2*/   (uint8 *) &cyclingPowerFeatures
       },
 
       // CP feature client user description
@@ -166,7 +171,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, charUserDescUUID },
         GATT_PERMIT_READ, 
         0, 
-        cyclingPowerFeatureUserDesc
+/*3*/   cyclingPowerFeatureUserDesc
       },
 
     // CP measurement declaration
@@ -174,7 +179,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ,
       0,
-      &cyclingPowerMeasProps
+/*4*/ &cyclingPowerMeasProps
     },
 
       // CP measurement value
@@ -182,7 +187,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, cyclingPowerMeasUUID },
         0,
         0,
-        &cyclingPowerMeas
+/*5*/   &cyclingPowerMeas
       },
 
       // CP measurement client characteristic configuration
@@ -190,7 +195,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, clientCharCfgUUID },
         GATT_PERMIT_READ | GATT_PERMIT_WRITE,
        0,
-        (uint8 *) &cyclingPowerMeasClientCharCfg
+/*6*/  (uint8 *) &cyclingPowerMeasClientCharCfg
       },
 
       // CP measurement client user description
@@ -198,7 +203,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, charUserDescUUID },
         GATT_PERMIT_READ, 
         0, 
-        cyclingPowerMeasUserDesc
+/*7*/   cyclingPowerMeasUserDesc
       },
 
     // CP sensor location declaration
@@ -206,7 +211,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ,
       0,
-      &cyclingPowerSensLocProps
+/*8*/ &cyclingPowerSensLocProps
     },
 
       // Sensor location Value
@@ -214,7 +219,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, sensLocationUUID },
         GATT_PERMIT_READ,
         0,
-        &cyclingPowerSensLoc
+/*9*/   &cyclingPowerSensLoc
       },
 
       // CP sensor location client user description
@@ -222,7 +227,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, charUserDescUUID },
         GATT_PERMIT_READ, 
         0, 
-        cyclingPowerSensLocUserDesc
+/*10*/  cyclingPowerSensLocUserDesc
       },
 
     // CP control point declaration
@@ -230,7 +235,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ,
       0,
-      &cyclingPowerControlPointProps
+/*11*/&cyclingPowerControlPointProps
     },
 
       // CP control point value
@@ -238,7 +243,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, cyclingPowerControlPointUUID },
         GATT_PERMIT_WRITE,
         0,
-        &cyclingPowerControlPoint
+/*12*/  &cyclingPowerControlPoint
       },
 
       // CP control point client characteristic configuration
@@ -246,7 +251,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, clientCharCfgUUID },
         GATT_PERMIT_READ | GATT_PERMIT_WRITE,
         0,
-        (uint8 *) &cyclingPowerControlPointClientCharCfg
+/*13*/  (uint8 *) &cyclingPowerControlPointClientCharCfg
       },
 
       // CP control point client user description
@@ -254,7 +259,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, charUserDescUUID },
         GATT_PERMIT_READ, 
         0, 
-        cyclingPowerControlPointUserDesc
+/*14*/  cyclingPowerControlPointUserDesc
       }
 
       #ifdef INCLUDE_CP_VECTOR
@@ -264,7 +269,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
       { ATT_BT_UUID_SIZE, characterUUID },
       GATT_PERMIT_READ,
       0,
-      &cyclingPowerVectorProps
+/*15*/&cyclingPowerVectorProps
     },
 
     // CP vector value
@@ -272,7 +277,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, cyclingPowerVectorUUID },
         GATT_PERMIT_READ,
         0,
-        &cyclingPowerVector
+/*16*/  &cyclingPowerVector
       },
 
       // CP vector client characteristic configuration
@@ -280,7 +285,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, clientCharCfgUUID },
         GATT_PERMIT_READ | GATT_PERMIT_WRITE,
         0,
-        (uint8 *) &cyclingPowerControlPointClientCharCfg
+/*17*/  (uint8 *) &cyclingPowerControlPointClientCharCfg
       },
 
       // CP vector client user description
@@ -288,7 +293,7 @@ static gattAttribute_t cyclingPowerAttrTbl[] = // TODO: check types of variables
         { ATT_BT_UUID_SIZE, charUserDescUUID },
         GATT_PERMIT_READ, 
         0, 
-        cyclingPowerVectorUserDesc
+/*18*/  cyclingPowerVectorUserDesc
       }
 
       #endif /* INCLUDE_CP_VECTOR */
@@ -308,8 +313,11 @@ static void cyclingPower_ProcessOSALMsg( osal_event_hdr_t *pMsg );
 static void cyclingPower_ProcessGATTMsg( gattMsgEvent_t *pMsg );
 static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 len );
 
-// TODO: add some func..
+// TODO: add some functions 
 static bool cyclingPower_SensorLocSupported( uint8 sensorLoc );
+// TODO: add function that will power off notification when lose connection e.g.: 
+//static void cyclingPower_HandleConnStatusCB( uint16 connHandle, uint8 changeType );
+ 
 
 /*********************************************************************
  * PROFILE CALLBACKS
@@ -597,7 +605,7 @@ bStatus_t CyclingPower_GetParameter( uint8 param, void *value )
       *((uint8*)value) = cyclingPowerSensLoc;
       break;
 
-    case CP_CONTROL_PARAM:
+    case CP_CONTROL_PARAM: // TODO: check if it is necessary
       *((uint8*)value) = cyclingPowerControlPoint;
       break;
 
@@ -705,12 +713,11 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
 
   switch ( pValue[0] )
   {
+    // TODO: add some extra conditions from specification (e.g. the bicycle is not moving)
     case CP_SET_CUMU_VAL:
       // If wheel revolutions is a feature
-      // TODO: add some extra conditions from specification
       if ( ( len <= 5 ) && ( cyclingPowerFeatures & CP_WHEEL_REV_SUPP ) )
       {
-        
         // full 32 bits were specified.
         if (( len - 1 ) == 4)
         {
@@ -719,14 +726,12 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
         else
         {
           cumuWheelRevolutions = 0;
-
           // In case only lower bits were specified and upper bits remain zero.
           for( int i = 0; i < (len - 1); ++i )
           {
             cumuWheelRevolutions += pValue[i + 1] << (i*8);
           }
         }
-
         // Notify app
         if ( cyclingPowerServiceCB != NULL )
         {
@@ -747,6 +752,7 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       {
         // Update sensor location
         cyclingPowerSensLoc = pValue[1];
+        // TODO: add capability to save this^ value to flash
 
         // Notify app
         if ( cyclingPowerServiceCB != NULL )
@@ -766,6 +772,52 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       {
         cpsCmdInd.len += supportedSensors;
         osal_memcpy( &(cpsCmdInd.pValue[3]), supportedSensorLocations, supportedSensors );
+      }
+      else // characteristic not supported.
+      {
+        // Send an indication with the list.
+        cpsStatus = CP_RESP_INVALID_OPERAND;
+      }
+      break;
+
+      case CP_SET_CRANK_LENGTH:
+      // If crank length adjustment is a feature
+      if ( ( len <= 3 ) && ( cyclingPowerFeatures & CP_SET_CRANK_LENGTH ) )
+      {
+        // full 16 bits were specified.
+        if (( len - 1 ) == 2)
+        {
+          crankLength = BUILD_UINT16( pValue[1], pValue[2]);
+        }
+        else
+        {
+          crankLength = 0;
+          // In case only lower bit were specified and upper bit remain zero.
+          for( int i = 0; i < (len - 1); ++i )
+          {
+            crankLength += pValue[i + 1] << (i*8);
+          }
+        }
+        // TODO: add capability to save "crankLength" value to flash
+        // Notify app
+        if ( cyclingPowerServiceCB != NULL )
+        {
+          (*cyclingPowerServiceCB)( CP_SET_CUMU_VAL, &crankLength );
+        }
+      }
+      else // characteristic not supported.
+      {
+        cpsStatus = CP_RESP_INVALID_OPERAND;
+      }
+      break;
+
+      case CP_REQ_CRANK_LENGTH:
+      // If crank length adjustment is a feature
+      if ( ( len == 1 ) && ( cyclingPowerFeatures & CP_SET_CRANK_LENGTH ) )
+      {
+        cpsCmdInd.len += 1; // add Hi-8 bit part 
+        cpsCmdInd.pValue[3] = LO_UINT16(crankLength);
+        cpsCmdInd.pValue[4] = Hi_UINT16(crankLength); 
       }
       else // characteristic not supported.
       {
@@ -831,6 +883,7 @@ static bStatus_t cyclingPower_ReadAttrCB( uint16 connHandle, gattAttribute_t *pA
     {
       //Read cycling power feature
       *pLen = 4;
+      // TODO: check endians
       pValue[0] = pAttr->pValue[3];
       pValue[1] = pAttr->pValue[2];
       pValue[2] = pAttr->pValue[1];
@@ -838,30 +891,11 @@ static bStatus_t cyclingPower_ReadAttrCB( uint16 connHandle, gattAttribute_t *pA
     }
     break;
 
-    // case GATT_CLIENT_CHAR_CFG_UUID:
-    // {
-    //   // Read measurement, control point or vector client configuration
-    //   if ( pAttr->pValue == (uint8*)cyclingPowerMeasClientCharCfg )
-    //   {
-    //     *pLen = 1;
-    //      pValue[0] = GATTServApp_ReadCharCfg(connHandle, cyclingPowerMeasClientCharCfg );
-    //   }
-    //   else if ( pAttr->pValue == (uint8*)cyclingPowerControlPointClientCharCfg )
-    //   {
-    //     *pLen = 1;
-    //      pValue[0] = GATTServApp_ReadCharCfg(connHandle, cyclingPowerControlPointClientCharCfg );
-    //   }
-    //   else if ( pAttr->pValue == (uint8*)cyclingPowerVectorClientCharCfg )
-    //   {
-    //     *pLen = 1;
-    //      pValue[0] = GATTServApp_ReadCharCfg(connHandle, cyclingPowerVectorClientCharCfg );
-    //   }
-    //   else
-    //   {
-    //     status = ATT_ERR_ATTR_NOT_FOUND;
-    //   }
-    // }
-    // break;
+    /* No need for "GATT_SERVICE_UUID", "GATT_CLIENT_CHAR_CFG_UUID" or 
+    "GATT_CHAR_USER_DESC_UUID" cases;
+    gattserverapp handles this type for reads */
+
+    // TODO: add other cases
 
     default:
       status = ATT_ERR_ATTR_NOT_FOUND;
@@ -896,6 +930,89 @@ static bStatus_t cyclingPower_WriteAttrCB( uint16 connHandle, gattAttribute_t *p
                                       uint8 method )
 {
   bStatus_t status = SUCCESS;
+  uint16 uuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1]);
+
+  if ( offset > 0 )
+  {
+    return (ATT_ERR_ATTR_NOT_LONG);
+  }
+
+  switch ( uuid )
+  {
+    case CYCPWR_CTRL_PT_UUID:
+      // Make sure Control Point Cfg is not already in progress
+      if ( scOpInProgress == TRUE )
+      {
+        status = CP_RESP_OPERATION_FAILED;
+      }
+      // Make sure Control Point Cfg is configured for Indications
+      else if ( (cyclingPowerControlPointClientCharCfg[connHandle].value 
+                                    & GATT_CLIENT_CFG_INDICATE) == FALSE )
+      {
+        status = CP_RESP_OPERATION_FAILED;
+      }
+      else
+      {
+        // Process CP control point cmd
+        cyclingPower_ProcessCPSCmd( pAttr->handle, pValue, len );
+        connectionHandle = connHandle;
+      }
+      break;
+
+      // For measure, vector and commands CCC
+    case GATT_CLIENT_CHAR_CFG_UUID:
+      if ( pAttr->handle == cyclingPowerAttrTbl[CP_COMMAND_CFG_POS].handle )
+      {
+        status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
+                                                 offset, GATT_CLIENT_CFG_INDICATE );
+        // Notify app
+        if ( cyclingPowerServiceCB != NULL )
+        {
+          (*cyclingPowerServiceCB)( CP_WRITE_ATTR, NULL );
+        }
+      }
+      else if ( pAttr->handle == cyclingPowerAttrTbl[CP_MEAS_CFG_POS].handle )
+      {
+        status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
+                                                 offset, GATT_CLIENT_CFG_NOTIFY );
+        if ( status == SUCCESS )
+        {
+          // Notify app
+          if ( cyclingPowerServiceCB != NULL )
+          {
+            uint16 charCfg = BUILD_UINT16( pValue[0], pValue[1] ); // TODO: check this
+
+            (*cyclingPowerServiceCB)( ((charCfg == GATT_CFG_NO_OPERATION) ?
+                                   CP_MEAS_NOTI_DISABLED :
+                                   CP_MEAS_NOTI_ENABLED ), NULL );
+          }
+        }
+      }
+      #ifdef INCLUDE_CP_VECTOR
+      else if ( pAttr->handle == cyclingPowerAttrTbl[CP_VECTOR_CFG_POS].handle )
+      {
+        status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
+                                                 offset, GATT_CLIENT_CFG_NOTIFY );
+        if ( status == SUCCESS )
+        {
+          // Notify app
+          if ( cyclingPowerServiceCB != NULL )
+          {
+            uint16 charCfg = BUILD_UINT16( pValue[0], pValue[1] ); // TODO: check this
+
+            (*cyclingPowerServiceCB)( ((charCfg == GATT_CFG_NO_OPERATION) ?
+                                   CP_VECTOR_NOTI_DISABLED :
+                                   CP_VECTOR_NOTI_ENABLED ), NULL );
+          }
+        }
+      }
+      #endif /*INCLUDE_CP_VECTOR*/
+      break;
+
+    default:
+      status = ATT_ERR_ATTR_NOT_FOUND;
+      break;
+
   return ( status );
 }
 

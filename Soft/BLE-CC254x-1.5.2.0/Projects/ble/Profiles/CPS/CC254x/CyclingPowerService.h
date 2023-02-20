@@ -57,14 +57,14 @@ extern "C"
 
 // CP supported Features
 #define CP_NO_SUPPORT                       0x00
-#define CP_PEDAL_POWER_BALANCE_SUPP         (uint32)1<<0
-#define CP_ACCUM_TORQUE_SUPP                (uint32)1<<1
-#define CP_WHEEL_REV_SUPP                   (uint32)1<<2
-#define CP_CRANK_REV_SUPP                   (uint32)1<<3
-#define CP_EXTREME_MAGNITUDES_SUPP          (uint32)1<<4
-#define CP_EXTREME_ANGELS_SUPP              (uint32)1<<5
+#define CP_PEDAL_POWER_BALANCE_SUPP         (uint32)1<<0 
+#define CP_ACCUM_TORQUE_SUPP                (uint32)1<<1 // may be
+#define CP_WHEEL_REV_SUPP                   (uint32)1<<2  
+#define CP_CRANK_REV_SUPP                   (uint32)1<<3 // may be, by the gyro
+#define CP_EXTREME_MAGNITUDES_SUPP          (uint32)1<<4 // may be
+#define CP_EXTREME_ANGELS_SUPP              (uint32)1<<5 // may be
 #define CP_TOP_BOTTOM_DEAD_SPOT_SUPP        (uint32)1<<6
-#define CP_ACCUM_ENERGY_SUPP                (uint32)1<<7
+#define CP_ACCUM_ENERGY_SUPP                (uint32)1<<7 // may be
 #define CP_OFFSET_COMP_INDICATOR_SUPP       (uint32)1<<8
 #define CP_OFFSET_COMP_SUPP                 (uint32)1<<9
 #define CP_CYCLING_MEAS_CHAR_MASK_SUPP      (uint32)1<<10
@@ -77,7 +77,7 @@ extern "C"
 #define CP_INST_MEAS_DIR_SUPP               (uint32)1<<17
 #define CP_FACTORY_CALIBR_DATE_SUPP         (uint32)1<<18
 #define CP_ENHA_OFFSET_COMP_SUPP            (uint32)1<<19
-#define CP_NOT_FOR_USE_IN_DIST_SYS          (uint32)1<<20
+#define CP_NOT_FOR_USE_IN_DIST_SYS          (uint32)1<<20 // +
 #define CP_CAN_BE_USED_IN_DIST_SYS          (uint32)1<<21
 #define CP_FULL_SUPPORT                     0x002FFFFF
 
@@ -87,11 +87,12 @@ extern "C"
 // CP service task events
 // TODO: add service task events
 #define CPS_CMD_IND_SEND_EVT                0x0001
-#define CP_MEAS_NOTI_ENABLED                0x0011
-#define CP_MEAS_NOTI_DISABLED               0x0012
-#define CP_READ_ATTR                        0x0013
-#define CP_WRITE_ATTR                       0x0014
-
+#define CP_MEAS_NOTI_ENABLED                0x01
+#define CP_MEAS_NOTI_DISABLED               0x02
+#define CP_READ_ATTR                        0x03
+#define CP_WRITE_ATTR                       0x04
+#define CP_VECTOR_NOTI_ENABLED              0x05
+#define CP_VECTOR_NOTI_DISABLED             0x06
 
 // CP control point Op codes 
 #define CP_SET_CUMU_VAL                     0x01
@@ -138,10 +139,10 @@ extern "C"
 #ifdef INCLUDE_CP_VECTOR
 
 // CP vecotr
-// TODO: add vector fields DEFINES
+// TODO: add vector fields defines
 
 // CP vector flags
-// TODO: add vector flags DEFINES
+// TODO: add vector flags defines
 
 #endif /* INCLUDE_CP_VECTOR */
 
