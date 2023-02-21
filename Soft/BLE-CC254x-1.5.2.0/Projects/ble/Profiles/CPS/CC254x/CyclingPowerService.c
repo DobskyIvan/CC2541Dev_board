@@ -20,13 +20,9 @@
 #include "gatt_profile_uuid.h"
 #include "CyclingPowerService.h"
 
-
 /*********************************************************************
  * GLOBAL VARIABLES
  */
-
-uint32 cumuWheelRevolutions = 0;
-uint16 crankLength = 0;
 
 // CP service
 CONST uint8 cyclingPowerServUUID[ATT_BT_UUID_SIZE] =
@@ -109,8 +105,7 @@ static uint8 cyclingPowerMeasUserDesc[]="CPS measurement variable\0";
 
 // Sensor location characteristic
 static uint8 cyclingPowerSensLocProps = GATT_PROP_READ;
-static uint8 cyclingPowerSensLoc = CP_SENSOR_LOC_LEFT_CRANK;
-// TODO: add capability to restore this^ value from flash
+static uint8 cyclingPowerSensLoc = CP_SENSOR_LOC_OTHER;
 static uint8 cyclingPowerSensLocUserDesc[]="CPS sensor location\0";
 
 // CP control point characteristic
@@ -313,9 +308,9 @@ static void cyclingPower_ProcessOSALMsg( osal_event_hdr_t *pMsg );
 static void cyclingPower_ProcessGATTMsg( gattMsgEvent_t *pMsg );
 static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 len );
 
-// TODO: add some functions 
 static bool cyclingPower_SensorLocSupported( uint8 sensorLoc );
-// TODO: add function that will power off notification when lose connection e.g.: 
+// TODO: add some other functions 
+//1. Add function that will power off notification when lose connection e.g.: 
 //static void cyclingPower_HandleConnStatusCB( uint16 connHandle, uint8 changeType );
  
 
@@ -571,6 +566,13 @@ bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *pValue )
       cyclingPowerSensLoc = *((uint8*)pValue);
     break;
 
+    case CP_AVAIL_SENS_LOCS:
+      if (supportedSensors  < CP_MAX_SENSOR_LOCS)
+      {
+        supportedSensorLocations[supportedSensors++] = *((uint8*)pValue);
+      }
+    break;
+
     default:
       ret = INVALIDPARAMETER;
     break;
@@ -718,6 +720,8 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       // If wheel revolutions is a feature
       if ( ( len <= 5 ) && ( cyclingPowerFeatures & CP_WHEEL_REV_SUPP ) )
       {
+        uint32 cumuWheelRevolutions;
+
         // full 32 bits were specified.
         if (( len - 1 ) == 4)
         {
@@ -752,7 +756,7 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       {
         // Update sensor location
         cyclingPowerSensLoc = pValue[1];
-        // TODO: add capability to save this^ value to flash
+        
 
         // Notify app
         if ( cyclingPowerServiceCB != NULL )
@@ -784,6 +788,8 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       // If crank length adjustment is a feature
       if ( ( len <= 3 ) && ( cyclingPowerFeatures & CP_SET_CRANK_LENGTH ) )
       {
+        uint16 crankLength = 0;
+
         // full 16 bits were specified.
         if (( len - 1 ) == 2)
         {
@@ -798,11 +804,10 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
             crankLength += pValue[i + 1] << (i*8);
           }
         }
-        // TODO: add capability to save "crankLength" value to flash
         // Notify app
         if ( cyclingPowerServiceCB != NULL )
         {
-          (*cyclingPowerServiceCB)( CP_SET_CUMU_VAL, &crankLength );
+          (*cyclingPowerServiceCB)( CP_SET_CUMU_VAL, (uint32) &crankLength );
         }
       }
       else // characteristic not supported.
@@ -817,7 +822,7 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       {
         cpsCmdInd.len += 1; // add Hi-8 bit part 
         cpsCmdInd.pValue[3] = LO_UINT16(crankLength);
-        cpsCmdInd.pValue[4] = Hi_UINT16(crankLength); 
+        cpsCmdInd.pValue[4] = HI_UINT16(crankLength); 
       }
       else // characteristic not supported.
       {

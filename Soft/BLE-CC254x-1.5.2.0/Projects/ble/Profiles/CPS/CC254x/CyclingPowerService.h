@@ -32,6 +32,7 @@ extern "C"
 #define CP_FEATURE_PARAM                    1
 #define CP_SENSOR_LOC_PARAM                 2
 #define CP_CONTROL_PARAM                    3
+#define CP_AVAIL_SENS_LOCS                  4
 
 // Sensor locations
 #define CP_SENSOR_LOC_OTHER                 0
@@ -135,7 +136,7 @@ extern "C"
 #define CP_FLAG_ACCUM_ENERGY                (uint32)1<<11
 #define CP_FLAG_OFFSET_COMP_INDICATOR_TRUE  (uint32)1<<12
 
-#define INCLUDE_CP_VECTOR
+//#define INCLUDE_CP_VECTOR
 #ifdef INCLUDE_CP_VECTOR
 
 // CP vecotr
