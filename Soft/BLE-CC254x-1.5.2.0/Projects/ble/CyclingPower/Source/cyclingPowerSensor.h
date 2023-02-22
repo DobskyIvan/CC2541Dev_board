@@ -31,7 +31,6 @@ extern "C"
 #define CP_NEGLECT_TIMEOUT_EVT                          (uint16)1<<3
 #define CP_RESET_EVT                                    (uint16)1<<4
 
-
 /*********************************************************************
  * MACROS
  */

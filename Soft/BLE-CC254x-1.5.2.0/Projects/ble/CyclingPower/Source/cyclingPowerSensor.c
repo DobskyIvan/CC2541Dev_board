@@ -50,7 +50,7 @@
 // Duration of slow advertising duration in ms (set to 0 for continuous advertising)
 #define DEFAULT_SLOW_ADV_DURATION                20000
 // How often to perform sensor's periodic event (ms)
-#define DEFAULT_CSC_PERIOD                       1000
+#define DEFAULT_CP_PERIOD                        1000
 // Whether to enable automatic parameter update request when a connection is formed
 #define DEFAULT_ENABLE_UPDATE_REQUEST            FALSE
 // Minimum connection interval (units of 1.25ms) if automatic parameter update request is enabled
@@ -129,8 +129,8 @@ static uint16 gapConnHandle;
 // Flags for measurements
 // TODO: add flags, update FLAGS_IDX_MAX
 static const uint8 sensorFlags[FLAGS_IDX_MAX] ={
-CP_FLAG_WHEEL_REV_DATA_PRESENT,
-CP_FLAG_CRANK_REV_DATA_PRESENT
+  CP_FLAG_WHEEL_REV_DATA_PRESENT,
+  CP_FLAG_CRANK_REV_DATA_PRESENT
 };
 
 // Flag index
@@ -145,6 +145,8 @@ uint32 cummWheelRevs = 100;
 uint16 cummCrankRevs = 50;
 uint16 lastWheelEvtTime = 60; // TEST
 uint16 lastCrankEvtTime = 70; // TEST
+uint8 sensorLocationCurrent = CP_SENSOR_LOC_LEFT_CRANK;
+uint16 crankLengthCurrent = 0;
 
 // Used to determine if a reset delay is in progress
 static uint8 resetInProgress = FALSE;
@@ -204,6 +206,43 @@ void CyclingPowerSensor_Init( uint8 task_id ){
     // sensor_HandleKeys() in cyclingSensor.c
     uint8 initial_advertising_enable = TRUE;
 
+    // if not in a connection, toggle advertising on and off
+    if ( gapProfileState != GAPROLE_CONNECTED ){
+      uint8 status;
+
+      // Set fast advertising interval for user-initiated connections
+      GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, DEFAULT_FAST_ADV_INTERVAL );
+      GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, DEFAULT_FAST_ADV_INTERVAL );
+      GAP_SetParamValue( TGAP_GEN_DISC_ADV_MIN, DEFAULT_WHITE_LIST_ADV_DURATION );
+
+      // toggle GAP advertisement status
+      GAPRole_GetParameter( GAPROLE_ADVERT_ENABLED, &status );
+      status = !status;
+
+      // If not already using white list, begin to do so.
+      // Only do so if about to begin advertising
+      if ( USING_WHITE_LIST && status == TRUE ){
+        uint8 bondCount = 0;
+
+        GAPBondMgr_GetParameter( GAPBOND_BOND_COUNT, &bondCount );
+
+        if ((sensorUsingWhiteList == FALSE) && (bondCount > 0) ){
+          uint8 value = GAP_FILTER_POLICY_WHITE;
+
+          GAPRole_SetParameter(GAPROLE_ADV_FILTER_POLICY, sizeof( uint8 ), &value);
+
+          sensorUsingWhiteList = TRUE;
+        }
+      }
+
+      GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &status );
+
+      // Set state variable
+      if (status == FALSE){
+        sensorAdvCancelled = TRUE;
+      }
+    }
+
     // By setting this to zero, the device will go into the waiting state after
     // being discoverable for 30.72 second, and will not being advertising again
     // until the enabler is set back to TRUE
@@ -262,7 +301,6 @@ void CyclingPowerSensor_Init( uint8 task_id ){
   // TODO: setup service data
   {
     uint8 features = CP_WHEEL_REV_SUPP | CP_MULTI_SENS_SUPP | CP_CRANK_LEN_ADJ_SUPP;
-    uint8 sensorLocationCurrent = CP_SENSOR_LOC_LEFT_CRANK;
     uint8 sensorLocation1 = CP_SENSOR_LOC_REAR_DROPOUT; // TEST
     uint8 sensorLocation2 = CP_SENSOR_LOC_TOP_OF_SHOE; // TEST
     uint8 sensorLocation3 = CP_SENSOR_LOC_REAR_WHEEL; // TEST
@@ -276,6 +314,8 @@ void CyclingPowerSensor_Init( uint8 task_id ){
 
     // Set sensor location
     CyclingPower_SetParameter(CP_SENSOR_LOC_PARAM, 1, &sensorLocationCurrent);
+
+    //TODO: set crankLength
 
     // Set supported features
     CyclingPower_SetParameter(CP_FEATURE_PARAM, 1,  &features);
@@ -425,130 +465,35 @@ static void sensorPower_ProcessOSALMsg( osal_event_hdr_t *pMsg ){
 }
 
 /*********************************************************************
- * @fn      sensor_HandleKeys
+ * @fn      sensorPowerMeasNotify
  *
- * @brief   Handles all key events for this device.
- *
- * @param   shift - true if in shift/alt.
- * @param   keys - bit field for key events. Valid entries:
- *                 HAL_KEY_SW_2
- *                 HAL_KEY_SW_1
+ * @brief   Prepare and send a CP measurement notification
  *
  * @return  none
  */
-static void sensor_HandleKeys( uint8 shift, uint8 keys )
-{
-
-  if ( keys == ( HAL_KEY_SW_1 | HAL_KEY_SW_2 ) )
-  {
-    // Reset in progress has started
-    resetInProgress = TRUE;
-
-    // Set OSAL timer for reset
-    osal_start_timerEx( sensorPower_TaskID, CSC_RESET_EVT, CSC_RESET_DELAY );
-  }
-  else if ( keys & HAL_KEY_SW_1 )
-  {
-    if ( resetInProgress == TRUE )
-    {
-      // Cancel the reset
-      resetInProgress = FALSE;
-      osal_stop_timerEx ( sensorPower_TaskID, CSC_RESET_EVT );
-    }
-
-    // set simulated measurement flag index
-    if (++sensorFlagsIdx == FLAGS_IDX_MAX)
-    {
-      sensorFlagsIdx = 0;
-    }
-  }
-  else if ( keys & HAL_KEY_SW_2 )
-  {
-    if ( resetInProgress == TRUE )
-    {
-      // Cancel the reset
-      resetInProgress = FALSE;
-      osal_stop_timerEx ( sensorPower_TaskID, CSC_RESET_EVT );
-    }
-
-    // if not in a connection, toggle advertising on and off
-    if ( gapProfileState != GAPROLE_CONNECTED )
-    {
-      uint8 status;
-
-      // Set fast advertising interval for user-initiated connections
-      GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, DEFAULT_FAST_ADV_INTERVAL );
-      GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, DEFAULT_FAST_ADV_INTERVAL );
-      GAP_SetParamValue( TGAP_GEN_DISC_ADV_MIN, DEFAULT_WHITE_LIST_ADV_DURATION );
-
-      // toggle GAP advertisement status
-      GAPRole_GetParameter( GAPROLE_ADVERT_ENABLED, &status );
-      status = !status;
-
-      // If not already using white list, begin to do so.
-      // Only do so if about to begin advertising
-      if ( USING_WHITE_LIST && status == TRUE )
-      {
-        uint8 bondCount = 0;
-
-        GAPBondMgr_GetParameter( GAPBOND_BOND_COUNT, &bondCount );
-
-        if ((sensorUsingWhiteList == FALSE) && (bondCount > 0) )
-        {
-          uint8 value = GAP_FILTER_POLICY_WHITE;
-
-          GAPRole_SetParameter(GAPROLE_ADV_FILTER_POLICY, sizeof( uint8 ), &value);
-
-          sensorUsingWhiteList = TRUE;
-        }
-      }
-
-      GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &status );
-
-      // Set state variable
-      if (status == FALSE)
-      {
-        sensorAdvCancelled = TRUE;
-      }
-    }
-  }
-  // End of key press
-  else if ( keys == 0x00 )
-  {
-    if ( resetInProgress == TRUE )
-    {
-      resetInProgress = FALSE;
-
-      osal_stop_timerEx( sensorPower_TaskID, CSC_RESET_EVT );
-    }
-  }
-}
-
-/*********************************************************************
- * @fn      sensorMeasNotify
- *
- * @brief   Prepare and send a CSC measurement notification
- *
- * @return  none
- */
-static void sensorMeasNotify( void )
-{
-  attHandleValueNoti_t sensorMeas;
+static void sensorPowerMeasNotify( void ){
+  attHandleValueNoti_t sensorPowerMeas;
   
-  sensorMeas.pValue = GATT_bm_alloc( gapConnHandle, ATT_HANDLE_VALUE_NOTI,
-                                     CSC_MEAS_LEN, NULL );
-  if ( sensorMeas.pValue != NULL )
-  {
-    uint8 *p = sensorMeas.pValue;
+  sensorPowerMeas.pValue = GATT_bm_alloc( gapConnHandle, ATT_HANDLE_VALUE_NOTI,
+                                     CP_MEAS_LEN, NULL );
+  if ( sensorPowerMeas.pValue != NULL ){
+    uint8 *p = sensorPowerMeas.pValue;
     uint8 flags = sensorFlags[sensorFlagsIdx];
 
-    // Build CSC measurement structure from simulated values
+  /* TODO: 
+  * 1. Take measurement data from periodic meas func;
+  * 2. add some other flags handlers
+  */
+
+    // Build CP measurement structure from data
     // Flags simulate the isPresent bits.
     *p++ = flags;
 
-    // If present, add Speed data into measurement
-    if (flags & CSC_FLAGS_SPEED)
-    {
+    // If present, add wheel rev. data into measurement
+    if (flags & CP_FLAG_WHEEL_REV_DATA_PRESENT){
+    
+  //TODO: add check for wheel rev. data to roll over
+
       *p++ = BREAK_UINT32(cummWheelRevs, 0);
       *p++ = BREAK_UINT32(cummWheelRevs, 1);
       *p++ = BREAK_UINT32(cummWheelRevs, 2);
@@ -556,47 +501,30 @@ static void sensorMeasNotify( void )
 
       *p++ = LO_UINT16(lastWheelEvtTime);
       *p++ = HI_UINT16(lastWheelEvtTime);
-
-      // Update simulated values (simulate in the reverse direction)
-      if (cummWheelRevs < WHEEL_REV_INCREMENT) //don't allow revolutions to roll over
-      {
-        cummWheelRevs = 0;
-      }
-      else
-      {
-        cummWheelRevs -= WHEEL_REV_INCREMENT;
-      }
-
-      lastWheelEvtTime += WHEEL_EVT_INCREMENT;
     }
 
-    // If present, add Cadence data into measurement
-    if (flags & CSC_FLAGS_CADENCE)
-    {
+    // If present, add crank rev. data into measurement
+    if (flags & CP_FLAG_CRANK_REV_DATA_PRESENT){
       *p++ = LO_UINT16(cummCrankRevs);
       *p++ = HI_UINT16(cummCrankRevs);
 
       *p++ = LO_UINT16(lastCrankEvtTime);
       *p++ = HI_UINT16(lastCrankEvtTime);
 
-      // Update Simualted Values
-      cummCrankRevs += CRANK_REV_INCREMENT;
-      lastCrankEvtTime += CRANK_EVT_INCREMENT;
     }
 
     // Get length
-    sensorMeas.len = (uint8) (p - sensorMeas.pValue);
+    sensorPowerMeas.len = (uint8) (p - sensorPowerMeas.pValue);
 
     // Send to service to send the notification
-    if ( Cycling_MeasNotify( gapConnHandle, &sensorMeas ) != SUCCESS )
-    {
-      GATT_bm_free( (gattMsg_t *)&sensorMeas, ATT_HANDLE_VALUE_NOTI );
+    if ( CyclingPower_MeasNotify( gapConnHandle, &sensorPowerMeas ) != SUCCESS ){
+      GATT_bm_free( (gattMsg_t *)&sensorPowerMeas, ATT_HANDLE_VALUE_NOTI );
     }
   }
 }
 
 /*********************************************************************
- * @fn      SensorGapStateCB
+ * @fn      SensorPowerGapStateCB
  *
  * @brief   Notification from the profile of a state change.
  *
@@ -604,17 +532,15 @@ static void sensorMeasNotify( void )
  *
  * @return  none
  */
-static void SensorGapStateCB( gaprole_States_t newState )
-{
+static void SensorPowerGapStateCB( gaprole_States_t newState ){
   // If connected
-  if (newState == GAPROLE_CONNECTED)
-  {
+  if (newState == GAPROLE_CONNECTED){
     // Get connection handle
     GAPRole_GetParameter(GAPROLE_CONNHANDLE, &gapConnHandle);
 
     // Set timer to update connection parameters
     // 5 seconds should allow enough time for Service Discovery by the collector to finish
-    osal_start_timerEx( sensorPower_TaskID, CSC_CONN_PARAM_UPDATE_EVT, SVC_DISC_DELAY);
+    osal_start_timerEx( sensorPower_TaskID, CP_CONN_PARAM_UPDATE_EVT, SVC_DISC_DELAY);
   }
   // If disconnected
   else if (gapProfileState == GAPROLE_CONNECTED &&
@@ -624,13 +550,12 @@ static void SensorGapStateCB( gaprole_States_t newState )
     uint8 bondCount = 0;
 
     // Stop periodic measurement
-    osal_stop_timerEx( sensorPower_TaskID, CSC_PERIODIC_EVT );
+    osal_stop_timerEx( sensorPower_TaskID, CP_PERIODIC_EVT );
 
     // If not already using white list, begin to do so.
     GAPBondMgr_GetParameter( GAPBOND_BOND_COUNT, &bondCount );
 
-    if( USING_WHITE_LIST && sensorUsingWhiteList == FALSE && bondCount > 0 )
-    {
+    if( USING_WHITE_LIST && sensorUsingWhiteList == FALSE && bondCount > 0 ){
       uint8 value = GAP_FILTER_POLICY_WHITE;
 
       GAPRole_SetParameter(GAPROLE_ADV_FILTER_POLICY, sizeof( uint8 ), &value);
@@ -638,15 +563,13 @@ static void SensorGapStateCB( gaprole_States_t newState )
       sensorUsingWhiteList = TRUE;
     }
 
-    if ( newState == GAPROLE_WAITING_AFTER_TIMEOUT )
-    {
+    if ( newState == GAPROLE_WAITING_AFTER_TIMEOUT ){
       // link loss timeout-- use fast advertising
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, DEFAULT_FAST_ADV_INTERVAL );
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, DEFAULT_FAST_ADV_INTERVAL );
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_MIN, DEFAULT_WHITE_LIST_ADV_DURATION );
     }
-    else
-    {
+    else{
       // Else use slow advertising
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, DEFAULT_SLOW_ADV_INTERVAL );
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, DEFAULT_SLOW_ADV_INTERVAL );
@@ -658,13 +581,11 @@ static void SensorGapStateCB( gaprole_States_t newState )
   }
   // if advertising stopped
   else if ( gapProfileState == GAPROLE_ADVERTISING &&
-            newState == GAPROLE_WAITING )
-  {
+            newState == GAPROLE_WAITING ){
     uint8 whiteListUsed = FALSE;
 
     // if white list is in use, disable to allow general access
-    if( sensorUsingWhiteList == TRUE )
-    {
+    if( sensorUsingWhiteList == TRUE ){
       uint8 value = GAP_FILTER_POLICY_ALL;
 
       GAPRole_SetParameter(GAPROLE_ADV_FILTER_POLICY, sizeof( uint8), &value);
@@ -675,14 +596,12 @@ static void SensorGapStateCB( gaprole_States_t newState )
     }
 
     // if advertising stopped by user
-    if ( sensorAdvCancelled )
-    {
+    if ( sensorAdvCancelled ){
       sensorAdvCancelled = FALSE;
     }
     // if fast advertising interrupted to cancel white list
     else if ( ( (!USING_WHITE_LIST) || whiteListUsed) &&
-              (GAP_GetParamValue( TGAP_GEN_DISC_ADV_INT_MIN ) == DEFAULT_FAST_ADV_INTERVAL ) )
-    {
+              (GAP_GetParamValue( TGAP_GEN_DISC_ADV_INT_MIN ) == DEFAULT_FAST_ADV_INTERVAL ) ){
       uint8 advState = TRUE;
 
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, DEFAULT_FAST_ADV_INTERVAL );
@@ -692,8 +611,7 @@ static void SensorGapStateCB( gaprole_States_t newState )
     }
     // if fast advertising switch to slow or if was already slow but using white list.
     else if ( ((!USING_WHITE_LIST) || whiteListUsed) ||
-             (GAP_GetParamValue( TGAP_GEN_DISC_ADV_INT_MIN ) == DEFAULT_FAST_ADV_INTERVAL) )
-    {
+             (GAP_GetParamValue( TGAP_GEN_DISC_ADV_INT_MIN ) == DEFAULT_FAST_ADV_INTERVAL) ){
       uint8 advState = TRUE;
 
       GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, DEFAULT_SLOW_ADV_INTERVAL );
@@ -703,8 +621,7 @@ static void SensorGapStateCB( gaprole_States_t newState )
     }
   }
   // if started
-  else if (newState == GAPROLE_STARTED)
-  {
+  else if (newState == GAPROLE_STARTED){
     // Set the system ID from the bd addr
     uint8 systemId[DEVINFO_SYSTEM_ID_LEN];
     GAPRole_GetParameter(GAPROLE_BD_ADDR, systemId);
@@ -725,92 +642,106 @@ static void SensorGapStateCB( gaprole_States_t newState )
 }
 
 /*********************************************************************
- * @fn      SensorCB
+ * @fn      SensorPowerCB
  *
- * @brief   Callback function for CSC service.
+ * @brief   Callback function for CP service.
  *
  * @param   event - service event
- * @param   pNewCummVal - pointer to new wheel revolution data
- *                        if specified by event.  NULL otherwise.
+ * @param   pNewVal - pointer to new data if specified by event.  NULL otherwise.
  * @return  none
  */
-static void SensorCB( uint8 event, uint32 *pNewCummVal )
+static void SensorPowerCB( uint8 event, uint32 *pNewVal )
 {
   static uint8 notificationsEnabled = FALSE;
-  
-  switch ( event )
-  {
-    case CSC_CMD_SET_CUMM_VAL:
+  // TODO: add other suported callbacks
+  switch ( event ){
+    case CP_SET_CUMU_VAL:
       // Cancel neglect timer
-      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled )
-      {
-        osal_stop_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT );
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        osal_stop_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT );
       }
 
-      cummWheelRevs = *pNewCummVal;
+      cummWheelRevs = *pNewVal;
 
       // Start neglect timer
-      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled )
-      {
-        osal_start_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        osal_start_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
       }
       break;
 
-    case CSC_CMD_UPDATE_SENS_LOC:
+    case CP_UPDATE_SENS_LOC:
       // Cancel neglect timer
-      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled )
-      {
-        osal_stop_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT );
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        osal_stop_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT );
       }
 
       // Get updated sensor location
-      Cycling_GetParameter( CSC_SENS_LOC, &sensorLocation );
+      CyclingPower_GetParameter( CP_SENSOR_LOC_PARAM, &sensorLocationCurrent );
 
       // Start neglect timer
-      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled )
-      {
-        osal_start_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        osal_start_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
       }
       break;
 
-    case CSC_MEAS_NOTI_ENABLED:
+    case CP_SET_CRANK_LENGTH:
       // Cancel neglect timer
-      if ( USING_NEGLECT_TIMEOUT )
-      {
-        osal_stop_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT );
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        osal_stop_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT );
+      }
+
+      // Get new crank length value
+      crankLengthCurrent = (uint16) *pNewVal;
+
+      // Start neglect timer
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        osal_start_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
+      }
+      break;
+
+    case CP_MEAS_NOTI_ENABLED:
+      // Cancel neglect timer
+      if ( USING_NEGLECT_TIMEOUT ){
+        osal_stop_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT );
       }
       
       // If connected start periodic measurement
-      if (gapProfileState == GAPROLE_CONNECTED)
-      {
+      if (gapProfileState == GAPROLE_CONNECTED){
         notificationsEnabled = TRUE;
         
-        osal_start_timerEx( sensorPower_TaskID, CSC_PERIODIC_EVT, DEFAULT_CSC_PERIOD );
+        osal_start_timerEx( sensorPower_TaskID, CP_PERIODIC_EVT, DEFAULT_CP_PERIOD );
       }
       break;
 
-    case CSC_MEAS_NOTI_DISABLED:
+    case CP_MEAS_NOTI_DISABLED:
       // Stop periodic measurement
-      osal_stop_timerEx( sensorPower_TaskID, CSC_PERIODIC_EVT );
+      osal_stop_timerEx( sensorPower_TaskID, CP_PERIODIC_EVT );
 
       notificationsEnabled = FALSE;
 
       // Start neglect timer
-      if ( USING_NEGLECT_TIMEOUT )
-      {
-        osal_start_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
+      if ( USING_NEGLECT_TIMEOUT ){
+        osal_start_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
       }
       break;
 
-    case CSC_READ_ATTR:
-    case CSC_WRITE_ATTR:
-      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled )
-      {
+    case CP_READ_ATTR:
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
         // Cancel neglect timer
-        osal_stop_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT );
-
+        osal_stop_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT );
+        // TODO: add some action..
         // Start neglect timer
-        osal_start_timerEx( sensorPower_TaskID, CSC_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
+        osal_start_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
+      }
+      break;
+
+    case CP_WRITE_ATTR:
+      if ( USING_NEGLECT_TIMEOUT && !notificationsEnabled ){
+        // Cancel neglect timer
+        osal_stop_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT );
+        // TODO: add some action..
+        // Start neglect timer
+        osal_start_timerEx( sensorPower_TaskID, CP_NEGLECT_TIMEOUT_EVT, NEGLECT_TIMEOUT_DELAY );
       }
       break;
 
@@ -820,23 +751,21 @@ static void SensorCB( uint8 event, uint32 *pNewCummVal )
 }
 
 /*********************************************************************
- * @fn      sensorPeriodicTask
+ * @fn      sensorPowerPeriodicTask
  *
- * @brief   Perform a periodic cycling application task.
+ * @brief   Perform a periodic cycling power application task.
  *
  * @param   none
  *
  * @return  none
  */
-static void sensorPeriodicTask( void )
-{
-  if (gapProfileState == GAPROLE_CONNECTED)
-  {
-    // Send speed and cadence measurement notification
-    sensorMeasNotify();
+static void sensorPowerPeriodicTask( void ){
+  if (gapProfileState == GAPROLE_CONNECTED){
+    // Send measurement notification
+    sensorPowerMeasNotify();
 
     // Restart timer
-    osal_start_timerEx( sensorPower_TaskID, CSC_PERIODIC_EVT, DEFAULT_CSC_PERIOD );
+    osal_start_timerEx( sensorPower_TaskID, CP_PERIODIC_EVT, DEFAULT_CP_PERIOD );
   }
 }
 

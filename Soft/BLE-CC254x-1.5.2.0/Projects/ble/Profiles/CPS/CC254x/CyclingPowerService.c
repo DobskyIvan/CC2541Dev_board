@@ -78,6 +78,8 @@ static attHandleValueInd_t cpsCmdInd;
 static uint8 supportedSensors = 0; 
 static uint8 supportedSensorLocations[CP_MAX_SENSOR_LOCS];
 
+//TODO: add other var e.g. crankLength
+
 
 /*********************************************************************
  * Profile Attributes - variables 
@@ -319,8 +321,7 @@ static bool cyclingPower_SensorLocSupported( uint8 sensorLoc );
  */
 
 // CP Service Callbacks
-CONST gattServiceCBs_t cyclingPowerCBs =
-{
+CONST gattServiceCBs_t cyclingPowerCBs ={
   cyclingPower_ReadAttrCB,  // Read callback function pointer
   cyclingPower_WriteAttrCB, // Write callback function pointer
   NULL                      // Authorization callback function pointer
@@ -339,13 +340,10 @@ CONST gattServiceCBs_t cyclingPowerCBs =
  *
  * @return  TRUE if supported, FALSE otherwise
  */
-static bool cyclingPower_SensorLocSupported( uint8 sensorLoc )
-{
+static bool cyclingPower_SensorLocSupported( uint8 sensorLoc ){
   uint8 i;
-  for (i = 0; i <= supportedSensors; i++)
-  {
-    if (supportedSensorLocations[i] == sensorLoc)
-    {
+  for (i = 0; i <= supportedSensors; i++){
+    if (supportedSensorLocations[i] == sensorLoc){
       return TRUE;
     }
   }
@@ -361,8 +359,7 @@ static bool cyclingPower_SensorLocSupported( uint8 sensorLoc )
  *
  * @return  none
  */
-void CyclingPowerService_Init( uint8 task_id )
-{
+void CyclingPowerService_Init( uint8 task_id ){
   // Only purpose is to obtain task ID
   cyclingPowerService_TaskID = task_id;
 }
@@ -378,16 +375,13 @@ void CyclingPowerService_Init( uint8 task_id )
  *
  * @return  none
  */
-uint16 CyclingPowerService_ProcessEvent( uint8 task_id, uint16 events )
-{
+uint16 CyclingPowerService_ProcessEvent( uint8 task_id, uint16 events ){
   VOID task_id;
 
-  if ( events & SYS_EVENT_MSG )
-  {
+  if ( events & SYS_EVENT_MSG ){
     uint8 *pMsg;
 
-    if ( (pMsg = osal_msg_receive( cyclingPowerService_TaskID )) != NULL )
-    {
+    if ( (pMsg = osal_msg_receive( cyclingPowerService_TaskID )) != NULL ){
       cyclingPower_ProcessOSALMsg( (osal_event_hdr_t *)pMsg );
 
       // Release the OSAL message
@@ -398,11 +392,10 @@ uint16 CyclingPowerService_ProcessEvent( uint8 task_id, uint16 events )
     return (events ^ SYS_EVENT_MSG);
   }
 
-  if ( events & CPS_CMD_IND_SEND_EVT )
-  {
+  if ( events & CPS_CMD_IND_SEND_EVT ){
     if ( GATT_Indication( connectionHandle, &cpsCmdInd, FALSE, 
-                          cyclingPowerService_TaskID ) != SUCCESS )
-    {
+                          cyclingPowerService_TaskID ) != SUCCESS ){
+
       GATT_bm_free( (gattMsg_t *)&cpsCmdInd, ATT_HANDLE_VALUE_IND );
     }
   
@@ -424,10 +417,8 @@ uint16 CyclingPowerService_ProcessEvent( uint8 task_id, uint16 events )
  *
  * @return  none
  */
-void cyclingPower_ProcessOSALMsg( osal_event_hdr_t *pMsg )
-{
-  switch ( pMsg->event )
-  {
+void cyclingPower_ProcessOSALMsg( osal_event_hdr_t *pMsg ){
+  switch ( pMsg->event ){
     case GATT_MSG_EVENT:
       cyclingPower_ProcessGATTMsg( (gattMsgEvent_t *) pMsg );
       break;
@@ -446,10 +437,8 @@ void cyclingPower_ProcessOSALMsg( osal_event_hdr_t *pMsg )
  *
  * @return  none
  */
-void cyclingPower_ProcessGATTMsg( gattMsgEvent_t *pMsg )
-{
-  if ( pMsg->method == ATT_HANDLE_VALUE_CFM )
-  {
+void cyclingPower_ProcessGATTMsg( gattMsgEvent_t *pMsg ){
+  if ( pMsg->method == ATT_HANDLE_VALUE_CFM ){
     // Indication receipt was confirmed by the client.
     // Set Control Point Cfg done
     scOpInProgress = FALSE;
@@ -467,23 +456,20 @@ void cyclingPower_ProcessGATTMsg( gattMsgEvent_t *pMsg )
  *
  * @return  Success or Failure
  */
-bStatus_t CyclingPower_AddService( uint32 services )
-{
+bStatus_t CyclingPower_AddService( uint32 services ){
   uint8 status;
 
   // Allocate client characteristic configuration table
   cyclingPowerMeasClientCharCfg = (gattCharCfg_t *)osal_mem_alloc( sizeof ( gattCharCfg_t ) * 
                                                               linkDBNumConns );
-  if ( cyclingPowerMeasClientCharCfg == NULL )
-  {
+  if ( cyclingPowerMeasClientCharCfg == NULL ){
     return ( bleMemAllocError );
   }
   
   // Allocate client characteristic configuration table
   cyclingPowerControlPointClientCharCfg = (gattCharCfg_t *)osal_mem_alloc( sizeof ( gattCharCfg_t ) * 
                                                                  linkDBNumConns );
-  if ( cyclingPowerControlPointClientCharCfg == NULL )
-  {
+  if ( cyclingPowerControlPointClientCharCfg == NULL ){
     // Free already allocated data
     osal_mem_free( cyclingPowerControlPointClientCharCfg );
     
@@ -493,8 +479,7 @@ bStatus_t CyclingPower_AddService( uint32 services )
   // Allocate client characteristic configuration table
   cyclingPowerVectorClientCharCfg = (gattCharCfg_t *)osal_mem_alloc( sizeof ( gattCharCfg_t ) * 
                                                                   linkDBNumConns );
-  if ( cyclingPowerVectorClientCharCfg == NULL )
-  {
+  if ( cyclingPowerVectorClientCharCfg == NULL ){
     // Free already allocated data
     osal_mem_free( cyclingPowerVectorClientCharCfg );
     
@@ -508,16 +493,14 @@ bStatus_t CyclingPower_AddService( uint32 services )
   GATTServApp_InitCharCfg( INVALID_CONNHANDLE, cyclingPowerVectorClientCharCfg);
   #endif /* INCLUDE_CP_VECTOR */
 
-  if ( services & CYCLING_POWER_SERVICE )
-  {
+  if ( services & CYCLING_POWER_SERVICE ){
     // Register GATT attribute list and CBs with GATT Server App
     status = GATTServApp_RegisterService( cyclingPowerAttrTbl,
                                           GATT_NUM_ATTRS( cyclingPowerAttrTbl ),
                                           GATT_MAX_ENCRYPT_KEY_SIZE,
                                           &cyclingPowerCBs );
   }
-  else
-  {
+  else{
     status = SUCCESS;
   }
 
@@ -533,8 +516,7 @@ bStatus_t CyclingPower_AddService( uint32 services )
  *
  * @return  None.
  */
-void CyclingPower_Register( cyclingPowerServiceCB_t pfnServiceCB )
-{
+void CyclingPower_Register( cyclingPowerServiceCB_t pfnServiceCB ){
   cyclingPowerServiceCB = pfnServiceCB;
 }
 
@@ -552,12 +534,10 @@ void CyclingPower_Register( cyclingPowerServiceCB_t pfnServiceCB )
  *
  * @return  bStatus_t
  */
-bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *pValue )
-{
+bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *pValue ){
   bStatus_t ret = SUCCESS;
 
-  switch ( param )
-  {
+  switch ( param ){
     case CP_FEATURE_PARAM:
       cyclingPowerFeatures = *((uint32*)pValue);
     break;
@@ -567,8 +547,7 @@ bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *pValue )
     break;
 
     case CP_AVAIL_SENS_LOCS:
-      if (supportedSensors  < CP_MAX_SENSOR_LOCS)
-      {
+      if (supportedSensors  < CP_MAX_SENSOR_LOCS){
         supportedSensorLocations[supportedSensors++] = *((uint8*)pValue);
       }
     break;
@@ -594,12 +573,10 @@ bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *pValue )
  *
  * @return  bStatus_t
  */
-bStatus_t CyclingPower_GetParameter( uint8 param, void *value )
-{
+bStatus_t CyclingPower_GetParameter( uint8 param, void *value ){
   bStatus_t ret = SUCCESS;
 
-  switch ( param )
-  {
+  switch ( param ){
     case CP_FEATURE_PARAM:
       *((uint32*)value) = cyclingPowerFeatures;
 
@@ -610,6 +587,8 @@ bStatus_t CyclingPower_GetParameter( uint8 param, void *value )
     case CP_CONTROL_PARAM: // TODO: check if it is necessary
       *((uint8*)value) = cyclingPowerControlPoint;
       break;
+
+    //TODO: add other parametrs cases
 
     default:
       ret = INVALIDPARAMETER;
@@ -630,13 +609,12 @@ bStatus_t CyclingPower_GetParameter( uint8 param, void *value )
  *
  * @return      Success or Failure
  */
-bStatus_t CyclingPower_MeasNotify( uint16 connHandle, attHandleValueNoti_t *pNoti )
-{
+bStatus_t CyclingPower_MeasNotify( uint16 connHandle, attHandleValueNoti_t *pNoti ){
+
   uint16 value = GATTServApp_ReadCharCfg( connHandle, cyclingPowerMeasClientCharCfg );
 
   // If notifications enabled
-  if ( value & GATT_CLIENT_CFG_NOTIFY )
-  {
+  if ( value & GATT_CLIENT_CFG_NOTIFY ){
     // Set the handle
     pNoti->handle = cyclingPowerAttrTbl[CP_MEAS_VALUE_POS].handle;
 
@@ -659,13 +637,11 @@ bStatus_t CyclingPower_MeasNotify( uint16 connHandle, attHandleValueNoti_t *pNot
  *
  * @return      Success or Failure
  */
-bStatus_t CyclingPower_VectorNotify( uint16 connHandle, attHandleValueNoti_t *pNoti )
-{
+bStatus_t CyclingPower_VectorNotify( uint16 connHandle, attHandleValueNoti_t *pNoti ){
   uint16 value = GATTServApp_ReadCharCfg( connHandle, cyclingPowerVectorClientCharCfg );
 
   // If notifications enabled
-  if ( value & GATT_CLIENT_CFG_NOTIFY )
-  {
+  if ( value & GATT_CLIENT_CFG_NOTIFY ){
     // Set the handle
     pNoti->handle = cyclingPowerAttrTbl[CP_VECTOR_VALUE_POS].handle;
 
@@ -688,17 +664,14 @@ bStatus_t CyclingPower_VectorNotify( uint16 connHandle, attHandleValueNoti_t *pN
  *
  * @return  none
  */
-static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 len )
-{
+static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 len ){
   uint8 cpsStatus = CP_RESP_SUCCESS;
 
   // See if need to alloc payload for new indication.
-  if (cpsCmdInd.pValue == NULL)
-  {
+  if (cpsCmdInd.pValue == NULL){
     cpsCmdInd.pValue = GATT_bm_alloc(connectionHandle, ATT_HANDLE_VALUE_IND, 
                                      CPS_CMD_LEN, NULL);
-    if (cpsCmdInd.pValue == NULL)
-    {
+    if (cpsCmdInd.pValue == NULL){
       return; // failed to allocate space!
     }
   }
@@ -713,37 +686,30 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
   cpsCmdInd.pValue[0] = CP_RESP_CODE;
   cpsCmdInd.pValue[1] = pValue[0];
 
-  switch ( pValue[0] )
-  {
+  switch ( pValue[0] ){
     // TODO: add some extra conditions from specification (e.g. the bicycle is not moving)
     case CP_SET_CUMU_VAL:
       // If wheel revolutions is a feature
-      if ( ( len <= 5 ) && ( cyclingPowerFeatures & CP_WHEEL_REV_SUPP ) )
-      {
+      if ( ( len <= 5 ) && ( cyclingPowerFeatures & CP_WHEEL_REV_SUPP ) ){
         uint32 cumuWheelRevolutions;
 
         // full 32 bits were specified.
-        if (( len - 1 ) == 4)
-        {
+        if (( len - 1 ) == 4){
           cumuWheelRevolutions = BUILD_UINT32( pValue[1], pValue[2], pValue[3], pValue[4]);
         }
-        else
-        {
+        else{
           cumuWheelRevolutions = 0;
           // In case only lower bits were specified and upper bits remain zero.
-          for( int i = 0; i < (len - 1); ++i )
-          {
+          for( int i = 0; i < (len - 1); ++i ){
             cumuWheelRevolutions += pValue[i + 1] << (i*8);
           }
         }
         // Notify app
-        if ( cyclingPowerServiceCB != NULL )
-        {
+        if ( cyclingPowerServiceCB != NULL ){
           (*cyclingPowerServiceCB)( CP_SET_CUMU_VAL, &cumuWheelRevolutions );
         }
       }
-      else // characteristic not supported.
-      {
+      else{ // characteristic not supported.
         cpsStatus = CP_RESP_INVALID_OPERAND;
       }
       break;
@@ -752,33 +718,28 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       // If multiple sensor locations is supported and that this is a valid location.
       if ( ( len == 2 )                              &&
            ( cyclingPowerFeatures & CP_MULTI_SENS_SUPP ) &&
-           ( cyclingPower_SensorLocSupported( pValue[1] ) == TRUE ) )
-      {
+           ( cyclingPower_SensorLocSupported( pValue[1] ) == TRUE ) ){
+
         // Update sensor location
         cyclingPowerSensLoc = pValue[1];
         
-
         // Notify app
-        if ( cyclingPowerServiceCB != NULL )
-        {
+        if ( cyclingPowerServiceCB != NULL ){
           (*cyclingPowerServiceCB)( CP_UPDATE_SENS_LOC, NULL );
         }
       }
-      else // characteristic not supported.
-      {
+      else{ // characteristic not supported.
         cpsStatus = CP_RESP_INVALID_OPERAND;
       }
       break;
 
       case CP_REQ_SUPP_SENS_LOC:
       // If multiple sensor locations are supported and list requested
-      if ( ( len == 1 ) && ( cyclingPowerFeatures & CP_MULTI_SENS_SUPP ) )
-      {
+      if ( ( len == 1 ) && ( cyclingPowerFeatures & CP_MULTI_SENS_SUPP ) ){
         cpsCmdInd.len += supportedSensors;
         osal_memcpy( &(cpsCmdInd.pValue[3]), supportedSensorLocations, supportedSensors );
       }
-      else // characteristic not supported.
-      {
+      else{ // characteristic not supported.
         // Send an indication with the list.
         cpsStatus = CP_RESP_INVALID_OPERAND;
       }
@@ -786,46 +747,38 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
 
       case CP_SET_CRANK_LENGTH:
       // If crank length adjustment is a feature
-      if ( ( len <= 3 ) && ( cyclingPowerFeatures & CP_SET_CRANK_LENGTH ) )
-      {
+      if ( ( len <= 3 ) && ( cyclingPowerFeatures & CP_CRANK_LEN_ADJ_SUPP ) ){
         uint16 crankLength = 0;
 
         // full 16 bits were specified.
-        if (( len - 1 ) == 2)
-        {
+        if (( len - 1 ) == 2){
           crankLength = BUILD_UINT16( pValue[1], pValue[2]);
         }
-        else
-        {
+        else{
           crankLength = 0;
           // In case only lower bit were specified and upper bit remain zero.
-          for( int i = 0; i < (len - 1); ++i )
-          {
+          for( int i = 0; i < (len - 1); ++i ){
             crankLength += pValue[i + 1] << (i*8);
           }
         }
         // Notify app
-        if ( cyclingPowerServiceCB != NULL )
-        {
-          (*cyclingPowerServiceCB)( CP_SET_CUMU_VAL, (uint32) &crankLength );
+        if ( cyclingPowerServiceCB != NULL ){
+          (*cyclingPowerServiceCB)( CP_SET_CRANK_LENGTH, (uint32) &crankLength );
         }
       }
-      else // characteristic not supported.
-      {
+      else{ // characteristic not supported.
         cpsStatus = CP_RESP_INVALID_OPERAND;
       }
       break;
 
       case CP_REQ_CRANK_LENGTH:
       // If crank length adjustment is a feature
-      if ( ( len == 1 ) && ( cyclingPowerFeatures & CP_SET_CRANK_LENGTH ) )
-      {
+      if ( ( len == 1 ) && ( cyclingPowerFeatures & CP_CRANK_LEN_ADJ_SUPP ) ){
         cpsCmdInd.len += 1; // add Hi-8 bit part 
         cpsCmdInd.pValue[3] = LO_UINT16(crankLength);
         cpsCmdInd.pValue[4] = HI_UINT16(crankLength); 
       }
-      else // characteristic not supported.
-      {
+      else{ // characteristic not supported.
         // Send an indication with the list.
         cpsStatus = CP_RESP_INVALID_OPERAND;
       }
@@ -863,29 +816,25 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
  */
 static bStatus_t cyclingPower_ReadAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
                                      uint8 *pValue, uint8 *pLen, uint16 offset,
-                                     uint8 maxLen, uint8 method )
-{
+                                     uint8 maxLen, uint8 method ){
+
   // Make sure it's not a blob operation (no attributes in the profile are long)
-  if ( offset > 0 )
-  {
+  if ( offset > 0 ){
     return ( ATT_ERR_ATTR_NOT_LONG );
   }
 
   bStatus_t status = SUCCESS;
   uint16 uuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1]);
 
-  switch ( uuid )
-  {
-    case SENSOR_LOC_UUID:
-    {
+  switch ( uuid ){
+    case SENSOR_LOC_UUID:{
       // Read sensor location
       *pLen = 1;
       pValue[0] = pAttr->pValue[0];
     }
     break;
 
-    case CYCPWR_FEATURE_UUID:
-    {
+    case CYCPWR_FEATURE_UUID:{
       //Read cycling power feature
       *pLen = 4;
       // TODO: check endians
@@ -908,8 +857,7 @@ static bStatus_t cyclingPower_ReadAttrCB( uint16 connHandle, gattAttribute_t *pA
   }
 
   // Notify app
-  if ( cyclingPowerServiceCB != NULL )
-  {
+  if ( cyclingPowerServiceCB != NULL ){
     (*cyclingPowerServiceCB)( CP_READ_ATTR, NULL );
   }
 
@@ -932,32 +880,27 @@ static bStatus_t cyclingPower_ReadAttrCB( uint16 connHandle, gattAttribute_t *pA
  */
 static bStatus_t cyclingPower_WriteAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
                                       uint8 *pValue, uint8 len, uint16 offset,
-                                      uint8 method )
-{
+                                      uint8 method ){
+
   bStatus_t status = SUCCESS;
   uint16 uuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1]);
 
-  if ( offset > 0 )
-  {
+  if ( offset > 0 ){
     return (ATT_ERR_ATTR_NOT_LONG);
   }
 
-  switch ( uuid )
-  {
+  switch ( uuid ){
     case CYCPWR_CTRL_PT_UUID:
       // Make sure Control Point Cfg is not already in progress
-      if ( scOpInProgress == TRUE )
-      {
+      if ( scOpInProgress == TRUE ){
         status = CP_RESP_OPERATION_FAILED;
       }
       // Make sure Control Point Cfg is configured for Indications
       else if ( (cyclingPowerControlPointClientCharCfg[connHandle].value 
-                                    & GATT_CLIENT_CFG_INDICATE) == FALSE )
-      {
+                                    & GATT_CLIENT_CFG_INDICATE) == FALSE ){
         status = CP_RESP_OPERATION_FAILED;
       }
-      else
-      {
+      else{
         // Process CP control point cmd
         cyclingPower_ProcessCPSCmd( pAttr->handle, pValue, len );
         connectionHandle = connHandle;
@@ -966,25 +909,20 @@ static bStatus_t cyclingPower_WriteAttrCB( uint16 connHandle, gattAttribute_t *p
 
       // For measure, vector and commands CCC
     case GATT_CLIENT_CHAR_CFG_UUID:
-      if ( pAttr->handle == cyclingPowerAttrTbl[CP_COMMAND_CFG_POS].handle )
-      {
+      if ( pAttr->handle == cyclingPowerAttrTbl[CP_COMMAND_CFG_POS].handle ){
         status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
                                                  offset, GATT_CLIENT_CFG_INDICATE );
         // Notify app
-        if ( cyclingPowerServiceCB != NULL )
-        {
+        if ( cyclingPowerServiceCB != NULL ){
           (*cyclingPowerServiceCB)( CP_WRITE_ATTR, NULL );
         }
       }
-      else if ( pAttr->handle == cyclingPowerAttrTbl[CP_MEAS_CFG_POS].handle )
-      {
+      else if ( pAttr->handle == cyclingPowerAttrTbl[CP_MEAS_CFG_POS].handle ){
         status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
                                                  offset, GATT_CLIENT_CFG_NOTIFY );
-        if ( status == SUCCESS )
-        {
+        if ( status == SUCCESS ){
           // Notify app
-          if ( cyclingPowerServiceCB != NULL )
-          {
+          if ( cyclingPowerServiceCB != NULL ){
             uint16 charCfg = BUILD_UINT16( pValue[0], pValue[1] ); // TODO: check this
 
             (*cyclingPowerServiceCB)( ((charCfg == GATT_CFG_NO_OPERATION) ?
@@ -994,15 +932,12 @@ static bStatus_t cyclingPower_WriteAttrCB( uint16 connHandle, gattAttribute_t *p
         }
       }
       #ifdef INCLUDE_CP_VECTOR
-      else if ( pAttr->handle == cyclingPowerAttrTbl[CP_VECTOR_CFG_POS].handle )
-      {
+      else if ( pAttr->handle == cyclingPowerAttrTbl[CP_VECTOR_CFG_POS].handle ){
         status = GATTServApp_ProcessCCCWriteReq( connHandle, pAttr, pValue, len,
                                                  offset, GATT_CLIENT_CFG_NOTIFY );
-        if ( status == SUCCESS )
-        {
+        if ( status == SUCCESS ){
           // Notify app
-          if ( cyclingPowerServiceCB != NULL )
-          {
+          if ( cyclingPowerServiceCB != NULL ){
             uint16 charCfg = BUILD_UINT16( pValue[0], pValue[1] ); // TODO: check this
 
             (*cyclingPowerServiceCB)( ((charCfg == GATT_CFG_NO_OPERATION) ?
