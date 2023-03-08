@@ -14,8 +14,7 @@
 #include "bcomdef.h"
 #include "OSAL.h"
 #include "OnBoard.h"
-//#include "hal_led.h"
-//#include "hal_key.h"
+//#include "hal_led.h" // FOR FUTURE USE
 #include "linkdb.h"
 #include "gatt.h"
 #include "hci.h"
@@ -42,11 +41,11 @@
 // Fast advertising interval in 625us units.  625*32 = 20ms (recommended)
 #define DEFAULT_FAST_ADV_INTERVAL                32
 // Duration of fast advertising duration in ms
-#define DEFAULT_FAST_ADV_DURATION                20000
+#define DEFAULT_FAST_ADV_DURATION                0 // endless, TEST
 // Duration of advertising to white list members only after link termination
-#define DEFAULT_WHITE_LIST_ADV_DURATION          10000
+#define DEFAULT_WHITE_LIST_ADV_DURATION          0 // endless, TEST
 // Slow advertising interval in 625us units.  625*1704 = 1065ms (recommended)
-#define DEFAULT_SLOW_ADV_INTERVAL                1704
+#define DEFAULT_SLOW_ADV_INTERVAL                0 // endless, TEST
 // Duration of slow advertising duration in ms (set to 0 for continuous advertising)
 #define DEFAULT_SLOW_ADV_DURATION                20000
 // How often to perform sensor's periodic event (ms)
@@ -62,25 +61,24 @@
 // Supervision timeout value (units of 10ms) if automatic parameter update request is enabled
 #define DEFAULT_DESIRED_CONN_TIMEOUT             1000
 // Sensor sends a slave security request.
-#define DEFAULT_PAIRING_PARAMETER                GAPBOND_PAIRING_MODE_INITIATE
+#define DEFAULT_PAIRING_PARAMETER                GAPBOND_PAIRING_MODE_WAIT_FOR_REQ
 // Bonded devices' addresses are stored in white list.
-#define USING_WHITE_LIST                         TRUE
+#define USING_WHITE_LIST                         FALSE
 // Request bonding.
-#define REQ_BONDING                              TRUE
+#define REQ_BONDING                              FALSE
 // Time alloted for service discovery before requesting more energy efficient connection parameters
 #define SVC_DISC_DELAY                           5000
 // After 15 seconds of no user input with notifications off, terminate connection
 #define NEGLECT_TIMEOUT_DELAY                    15000
 // Setting this to true lets this device disconnect after a period of no use.
-#define USING_NEGLECT_TIMEOUT                    TRUE
+#define USING_NEGLECT_TIMEOUT                    FALSE
 // delay for reset of device's bonds, connections, alerts
 #define CSC_RESET_DELAY                          3000 // in ms, 3 seconds
 
-// TODO: specify the length of measurement data (need to correct notify)
-#define CP_MEAS_LEN                               11
+// TODO: specify the length of measurement data (need to allocate memmory for 
+// meas notify)this value needs to be variable!
+#define CP_MEAS_LEN                               14 // TEST
 
-// How much flags used by measurement data
-#define FLAGS_IDX_MAX                             2
 
 /*********************************************************************
  * LOCAL VARIABLES
@@ -126,30 +124,28 @@ static uint8 advertData[] ={
 static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "CP Sensor";
 // GAP connection handle
 static uint16 gapConnHandle;
-// Flags for measurements
-// TODO: add flags, update FLAGS_IDX_MAX
-static const uint8 sensorFlags[FLAGS_IDX_MAX] ={
-  CP_FLAG_WHEEL_REV_DATA_PRESENT,
-  CP_FLAG_CRANK_REV_DATA_PRESENT
-};
-
-// Flag index
-static uint8 sensorFlagsIdx = 0;
 
 // Advertising user-cancelled state
 static bool sensorAdvCancelled = FALSE;
 
+// Flags for measurements
+// TODO: add flags
+static uint16 sensorFlags = CP_FLAG_WHEEL_REV_DATA_PRESENT 
+| CP_FLAG_CRANK_REV_DATA_PRESENT | CP_FLAG_OFFSET_COMP_INDICATOR_TRUE; // TEST
+
+
 // CP parameters
 // TODO: add other used parametrs; add capabilty to restore cached values
-uint32 cummWheelRevs = 100;
-uint16 cummCrankRevs = 50;
-uint16 lastWheelEvtTime = 60; // TEST
-uint16 lastCrankEvtTime = 70; // TEST
+uint32 cummWheelRevs = 0; // TEST
+uint16 cummCrankRevs = 0; // TEST
+#define REV_INCREMENT_1 250 // TEST
+#define REV_INCREMENT_2 700 // TEST
+uint16 lastWheelEvtTime = 0; // TEST
+uint16 lastCrankEvtTime = 0; // TEST
+int16 instantaneousPower = 150; // TEST
 uint8 sensorLocationCurrent = CP_SENSOR_LOC_LEFT_CRANK;
 uint16 crankLengthCurrent = 0;
 
-// Used to determine if a reset delay is in progress
-static uint8 resetInProgress = FALSE;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -158,7 +154,6 @@ static uint8 resetInProgress = FALSE;
 static void sensorPower_ProcessOSALMsg( osal_event_hdr_t *pMsg );
 static void SensorPowerGapStateCB( gaprole_States_t newState );
 static void sensorPowerPeriodicTask( void );
-static void sensorPower_HandleKeys( uint8 shift, uint8 keys );
 static void sensorPowerMeasNotify( void );
 static void SensorPowerCB( uint8 event, uint32 *pNewCummVal );
 
@@ -168,7 +163,7 @@ static void SensorPowerCB( uint8 event, uint32 *pNewCummVal );
 
 // GAP Role Callbacks
 static gapRolesCBs_t cyclingPowerPeripheralCB ={
-  SensorGapStateCB,       // Profile State Change Callbacks
+  SensorPowerGapStateCB,       // Profile State Change Callbacks
   NULL                    // When a valid RSSI is read from controller
 };
 
@@ -300,28 +295,33 @@ void CyclingPowerSensor_Init( uint8 task_id ){
   // Setup CP profile data
   // TODO: setup service data
   {
-    uint8 features = CP_WHEEL_REV_SUPP | CP_MULTI_SENS_SUPP | CP_CRANK_LEN_ADJ_SUPP;
+    uint32 features = CP_WHEEL_REV_SUPP | CP_MULTI_SENS_SUPP 
+      | CP_CRANK_LEN_ADJ_SUPP | CP_NOT_FOR_USE_IN_DIST_SYS;
     uint8 sensorLocation1 = CP_SENSOR_LOC_REAR_DROPOUT; // TEST
     uint8 sensorLocation2 = CP_SENSOR_LOC_TOP_OF_SHOE; // TEST
     uint8 sensorLocation3 = CP_SENSOR_LOC_REAR_WHEEL; // TEST
     uint8 sensorLocation4 = CP_SENSOR_LOC_HIP; // TEST
 
     // Add available sensor locations
-    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, 1, &sensorLocation1); // TEST
-    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, 1, &sensorLocation2); // TEST
-    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, 1, &sensorLocation3); // TEST
-    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, 1, &sensorLocation4); // TEST
+    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, &sensorLocation1); // TEST
+    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, &sensorLocation2); // TEST
+    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, &sensorLocation3); // TEST
+    CyclingPower_SetParameter(CP_AVAIL_SENS_LOCS, &sensorLocation4); // TEST
 
     // Set sensor location
-    CyclingPower_SetParameter(CP_SENSOR_LOC_PARAM, 1, &sensorLocationCurrent);
+    CyclingPower_SetParameter(CP_SENSOR_LOC_PARAM, &sensorLocationCurrent);
 
     //TODO: set crankLength
 
     // Set supported features
-    CyclingPower_SetParameter(CP_FEATURE_PARAM, 1,  &features);
+    CyclingPower_SetParameter(CP_FEATURE_PARAM, &features);
   }
 
   // TODO: turn on first led // TEST
+  P1SEL &= ~ ((uint8)1<<0 | (uint8)1<<1); // P1_0, P1_1 as GPIO
+  P1DIR |= ((uint8)1<<0 | (uint8)1<<1); // P1_0, P1_1 as output
+  //P1 |= ((uint8)1<<0 | (uint8)1<<1); // P1_0, P1_1 HIGH
+  P1 &= ~ ((uint8)1<<0 | (uint8)1<<1); // P1_0, P1_1 LOW
 
   // Setup a delayed profile startup
   osal_set_event( sensorPower_TaskID, START_DEVICE_EVT );
@@ -472,27 +472,40 @@ static void sensorPower_ProcessOSALMsg( osal_event_hdr_t *pMsg ){
  * @return  none
  */
 static void sensorPowerMeasNotify( void ){
+  
+  static uint8 sw = 1, sw_ = 1; //TEST
+  
   attHandleValueNoti_t sensorPowerMeas;
   
   sensorPowerMeas.pValue = GATT_bm_alloc( gapConnHandle, ATT_HANDLE_VALUE_NOTI,
                                      CP_MEAS_LEN, NULL );
   if ( sensorPowerMeas.pValue != NULL ){
     uint8 *p = sensorPowerMeas.pValue;
-    uint8 flags = sensorFlags[sensorFlagsIdx];
 
   /* TODO: 
   * 1. Take measurement data from periodic meas func;
   * 2. add some other flags handlers
+  * 3. add data availability check!
   */
 
     // Build CP measurement structure from data
-    // Flags simulate the isPresent bits.
-    *p++ = flags;
+    
+    //Flags, necessary
+    *p++ = LO_UINT16(sensorFlags); // [0]
+    *p++ = HI_UINT16(sensorFlags); // [1]
+    
+    // TODO: check signification
+    //Instantaneous Power, necessary
+    *p++ = LO_UINT16(instantaneousPower); // [2]
+    *p++ = HI_UINT16(instantaneousPower); // [3]
+
+    if (instantaneousPower == 150) instantaneousPower = 180; // TEST
+    else instantaneousPower = 150; // TEST
 
     // If present, add wheel rev. data into measurement
-    if (flags & CP_FLAG_WHEEL_REV_DATA_PRESENT){
+    if (sensorFlags & CP_FLAG_WHEEL_REV_DATA_PRESENT){
     
-  //TODO: add check for wheel rev. data to roll over
+      //TODO: add check for wheel rev. data to roll over
 
       *p++ = BREAK_UINT32(cummWheelRevs, 0);
       *p++ = BREAK_UINT32(cummWheelRevs, 1);
@@ -501,16 +514,41 @@ static void sensorPowerMeasNotify( void ){
 
       *p++ = LO_UINT16(lastWheelEvtTime);
       *p++ = HI_UINT16(lastWheelEvtTime);
+      
+      cummWheelRevs++; // TEST
+      
+      // TEST
+      if (sw){
+        lastWheelEvtTime += REV_INCREMENT_1; 
+        sw = 0;
+      }
+      else{
+        lastWheelEvtTime += REV_INCREMENT_2; 
+        sw = 1;
+      }
+
     }
 
     // If present, add crank rev. data into measurement
-    if (flags & CP_FLAG_CRANK_REV_DATA_PRESENT){
+    if (sensorFlags & CP_FLAG_CRANK_REV_DATA_PRESENT){
       *p++ = LO_UINT16(cummCrankRevs);
       *p++ = HI_UINT16(cummCrankRevs);
 
       *p++ = LO_UINT16(lastCrankEvtTime);
       *p++ = HI_UINT16(lastCrankEvtTime);
 
+      cummCrankRevs++; // TEST
+      
+            // TEST
+      if (sw_){
+        lastCrankEvtTime += REV_INCREMENT_1; 
+        sw_ = 0;
+      }
+      else{
+        lastCrankEvtTime += REV_INCREMENT_2; 
+        sw_ = 1;
+      }
+      
     }
 
     // Get length
@@ -535,6 +573,7 @@ static void sensorPowerMeasNotify( void ){
 static void SensorPowerGapStateCB( gaprole_States_t newState ){
   // If connected
   if (newState == GAPROLE_CONNECTED){
+    P1 |= (uint8)1<<0; // TEST
     // Get connection handle
     GAPRole_GetParameter(GAPROLE_CONNHANDLE, &gapConnHandle);
 
@@ -544,8 +583,8 @@ static void SensorPowerGapStateCB( gaprole_States_t newState ){
   }
   // If disconnected
   else if (gapProfileState == GAPROLE_CONNECTED &&
-           newState != GAPROLE_CONNECTED)
-  {
+           newState != GAPROLE_CONNECTED){
+    P1 &= ~ (uint8)1<<0; // TEST
     uint8 advState = TRUE;
     uint8 bondCount = 0;
 
@@ -583,7 +622,8 @@ static void SensorPowerGapStateCB( gaprole_States_t newState ){
   else if ( gapProfileState == GAPROLE_ADVERTISING &&
             newState == GAPROLE_WAITING ){
     uint8 whiteListUsed = FALSE;
-
+    
+    P1 &= ~ (uint8)1<<1; // TEST
     // if white list is in use, disable to allow general access
     if( sensorUsingWhiteList == TRUE ){
       uint8 value = GAP_FILTER_POLICY_ALL;
@@ -622,6 +662,7 @@ static void SensorPowerGapStateCB( gaprole_States_t newState ){
   }
   // if started
   else if (newState == GAPROLE_STARTED){
+    P1 |= (uint8)1<<1; // TEST
     // Set the system ID from the bd addr
     uint8 systemId[DEVINFO_SYSTEM_ID_LEN];
     GAPRole_GetParameter(GAPROLE_BD_ADDR, systemId);
@@ -761,7 +802,8 @@ static void SensorPowerCB( uint8 event, uint32 *pNewVal )
  */
 static void sensorPowerPeriodicTask( void ){
   if (gapProfileState == GAPROLE_CONNECTED){
-    // Send measurement notification
+    // Send measurement notification 
+
     sensorPowerMeasNotify();
 
     // Restart timer

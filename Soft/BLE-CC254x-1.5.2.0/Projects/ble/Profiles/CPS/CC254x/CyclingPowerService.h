@@ -88,12 +88,12 @@ extern "C"
 // CP service task events
 // TODO: add service task events
 #define CPS_CMD_IND_SEND_EVT                0x0001
-#define CP_MEAS_NOTI_ENABLED                0x01
-#define CP_MEAS_NOTI_DISABLED               0x02
-#define CP_READ_ATTR                        0x03
-#define CP_WRITE_ATTR                       0x04
-#define CP_VECTOR_NOTI_ENABLED              0x05
-#define CP_VECTOR_NOTI_DISABLED             0x06
+#define CP_MEAS_NOTI_ENABLED                0x11
+#define CP_MEAS_NOTI_DISABLED               0x12
+#define CP_READ_ATTR                        0x13
+#define CP_WRITE_ATTR                       0x14
+#define CP_VECTOR_NOTI_ENABLED              0x15
+#define CP_VECTOR_NOTI_DISABLED             0x16
 
 // CP control point Op codes 
 #define CP_SET_CUMU_VAL                     0x01
@@ -213,13 +213,12 @@ extern void CyclingPower_Register( cyclingPowerServiceCB_t pfnServiceCB );
  * @brief   Set a CP parameter.
  *
  * @param   param - Profile parameter ID
- * @param   len - length of data to right
  * @param   value - pointer to data to write.  This is dependent on
  *          the parameter ID and WILL be cast to the appropriate
  *          data type (example: data type of uint16 will be cast to
  *          uint16 pointer).
  */
-extern bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *value );
+extern bStatus_t CyclingPower_SetParameter( uint8 param, void *value );
 
 /*********************************************************************
  * @fn      CyclingPower_GetParameter

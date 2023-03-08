@@ -80,6 +80,8 @@ static uint8 supportedSensorLocations[CP_MAX_SENSOR_LOCS];
 
 //TODO: add other var e.g. crankLength
 
+static uint16 crankLength = 0;
+
 
 /*********************************************************************
  * Profile Attributes - variables 
@@ -526,7 +528,6 @@ void CyclingPower_Register( cyclingPowerServiceCB_t pfnServiceCB ){
  * @brief   Set a CP parameter.
  *
  * @param   param - Profile parameter ID
- * @param   len - length of data to right
  * @param   value - pointer to data to write.  This is dependent on
  *          the parameter ID and WILL be cast to the appropriate
  *          data type (example: data type of uint16 will be cast to
@@ -534,7 +535,7 @@ void CyclingPower_Register( cyclingPowerServiceCB_t pfnServiceCB ){
  *
  * @return  bStatus_t
  */
-bStatus_t CyclingPower_SetParameter( uint8 param, uint8 len, void *pValue ){
+bStatus_t CyclingPower_SetParameter( uint8 param, void *pValue ){
   bStatus_t ret = SUCCESS;
 
   switch ( param ){
@@ -748,7 +749,6 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
       case CP_SET_CRANK_LENGTH:
       // If crank length adjustment is a feature
       if ( ( len <= 3 ) && ( cyclingPowerFeatures & CP_CRANK_LEN_ADJ_SUPP ) ){
-        uint16 crankLength = 0;
 
         // full 16 bits were specified.
         if (( len - 1 ) == 2){
@@ -763,7 +763,7 @@ static void cyclingPower_ProcessCPSCmd( uint16 attrHandle, uint8 *pValue, uint8 
         }
         // Notify app
         if ( cyclingPowerServiceCB != NULL ){
-          (*cyclingPowerServiceCB)( CP_SET_CRANK_LENGTH, (uint32) &crankLength );
+          (*cyclingPowerServiceCB)( CP_SET_CRANK_LENGTH, (uint32*) &crankLength );
         }
       }
       else{ // characteristic not supported.
@@ -837,11 +837,11 @@ static bStatus_t cyclingPower_ReadAttrCB( uint16 connHandle, gattAttribute_t *pA
     case CYCPWR_FEATURE_UUID:{
       //Read cycling power feature
       *pLen = 4;
-      // TODO: check endians
-      pValue[0] = pAttr->pValue[3];
-      pValue[1] = pAttr->pValue[2];
-      pValue[2] = pAttr->pValue[1];
-      pValue[3] = pAttr->pValue[0];
+      
+      pValue[0] = pAttr->pValue[0];
+      pValue[1] = pAttr->pValue[1];
+      pValue[2] = pAttr->pValue[2];
+      pValue[3] = pAttr->pValue[3];
     }
     break;
 
@@ -952,7 +952,7 @@ static bStatus_t cyclingPower_WriteAttrCB( uint16 connHandle, gattAttribute_t *p
     default:
       status = ATT_ERR_ATTR_NOT_FOUND;
       break;
-
+  }
   return ( status );
 }
 
