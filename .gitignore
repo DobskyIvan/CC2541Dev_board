@@ -1,6 +1,9 @@
 # ignore:
 /PCB/*
 /Case/~$*.*
+/Soft/User Firmware/Simple_io/*
+	# will add in the future:
+/Soft/User Firmware/OSAL_sample/*
 # except:
 !/PCB/Gerber
 !*.step
@@ -8,3 +11,5 @@
 !*.PDF
 !*.PrjPcb
 !*.SchDoc
+!/Soft/User Firmware/Simple_io/UserSpace
+!/Soft/User Firmware/Simple_io/Include
